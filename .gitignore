@@ -1,0 +1,10 @@
+.vs/
+bin/
+bin-int/
+**.sln
+**.vcxproj
+**.filters
+**.user
+VulkanProgram/vendor/GLFW/docs/
+**.xcworkspace/
+**.xcodeproj/
