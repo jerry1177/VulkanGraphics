@@ -14,6 +14,7 @@ outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 IncludeDir = {}
 IncludeDir["GLFW"] = "VulkanProgram/vendor/GLFW/include"
 IncludeDir["Glad"] = "VulkanProgram/vendor/Glad/include"
+IncludeDir["Vulkan"] = "C:/VulkanSDK/1.2.170.0/Include"
 IncludeDir["glm"] = "VulkanProgram/vendor/glm"
 IncludeDir["stb_image"] = "VulkanProgram/vendor/stb_image"
 
@@ -45,6 +46,7 @@ project "VulkanProgram"
 		"%{prj.name}/src",
 		"%{prj.name}/vendor/spdlog/include",
 		"%{IncludeDir.GLFW}",
+		"%{IncludeDir.Vulkan}",
 		"%{IncludeDir.Glad}",
 		"%{IncludeDir.glm}",
 		"%{IncludeDir.stb_image}"
@@ -79,6 +81,7 @@ project "VulkanProgram"
 		defines "G_DEBUG"
 		runtime "Debug"
 		symbols "on"
+		
 
 	filter "configurations:Release"
 		defines "G_RELEASE"
