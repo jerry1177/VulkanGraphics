@@ -17,6 +17,7 @@ namespace VulkanGraphics {
     
     class HelloTriangleApplication {
     public:
+        static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
         void run();
         static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
             VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -32,7 +33,7 @@ namespace VulkanGraphics {
             return VK_FALSE;
         }
     public:
-        
+        bool framebufferResized = false;
 
 
     private:
@@ -41,6 +42,7 @@ namespace VulkanGraphics {
         void mainLoop();
         void cleanup();
 
+        
         void createInstance();
         bool checkValidationLayerSupport();
         std::vector<const char*> getRequiredExtensions();
@@ -54,6 +56,8 @@ namespace VulkanGraphics {
         QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
         SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
         void createSwapChain();
+        void recreateSwapChain();
+        void cleanupSwapChain();
         void createImageViews();
         void createRenderPass();
         void createGraphicsPipeline();
@@ -61,6 +65,8 @@ namespace VulkanGraphics {
         void createFramebuffers();
         void createCommandPool();
         void createCommandBuffers();
+        void drawFrame();
+        void createSemaphores();
         
         
         
@@ -85,6 +91,14 @@ namespace VulkanGraphics {
         std::vector<VkFramebuffer> swapChainFramebuffers;
         VkCommandPool commandPool;
         std::vector<VkCommandBuffer> commandBuffers;
+        const int MAX_FRAMES_IN_FLIGHT = 2;
+        size_t currentFrame = 0;
+        std::vector<VkSemaphore> imageAvailableSemaphores;
+        std::vector<VkSemaphore> renderFinishedSemaphores;
+        std::vector<VkFence> inFlightFences;
+        std::vector<VkFence> imagesInFlight;
+
+        
         //
         
         VkFormat m_SwapChainImageFormat;
