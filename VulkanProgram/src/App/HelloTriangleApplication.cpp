@@ -4,6 +4,7 @@
 #include "../SwapChainOptimizer.h"
 #include "HelloTriangleApplication.h"
 
+
 namespace VulkanGraphics {
     static std::vector<char> readFile(const std::string& filename) {
 
@@ -67,7 +68,8 @@ namespace VulkanGraphics {
         createRenderPass();
         createGraphicsPipeline();
         createFramebuffers();
-        createCommandPool();
+        createCommandPools();
+        createVertexBuffer();
         createCommandBuffers();
         createSemaphores();
     }
@@ -82,14 +84,16 @@ namespace VulkanGraphics {
 
     void HelloTriangleApplication::cleanup() {
         cleanupSwapChain();
+        vkDestroyBuffer(m_Device, vertexBuffer, nullptr);
+        vkFreeMemory(m_Device, vertexBufferMemory, nullptr);
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             vkDestroySemaphore(m_Device, renderFinishedSemaphores[i], nullptr);
             vkDestroySemaphore(m_Device, imageAvailableSemaphores[i], nullptr);
             vkDestroyFence(m_Device, inFlightFences[i], nullptr);
         }
-        vkDestroyCommandPool(m_Device, commandPool, nullptr);
-        
+        vkDestroyCommandPool(m_Device, commandPools[VK_QUEUE_GRAPHICS_BIT], nullptr);
+        vkDestroyCommandPool(m_Device, commandPools[VK_QUEUE_TRANSFER_BIT], nullptr);
         
         
         vkDestroyDevice(m_Device, nullptr);
@@ -108,7 +112,7 @@ namespace VulkanGraphics {
             vkDestroyFramebuffer(m_Device, swapChainFramebuffers[i], nullptr);
         }
 
-        vkFreeCommandBuffers(m_Device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+        vkFreeCommandBuffers(m_Device, commandPools[VK_QUEUE_GRAPHICS_BIT], static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
 
         vkDestroyPipeline(m_Device, graphicsPipeline, nullptr);
         vkDestroyPipelineLayout(m_Device, pipelineLayout, nullptr);
@@ -120,6 +124,96 @@ namespace VulkanGraphics {
 
         vkDestroySwapchainKHR(m_Device, m_SwapChain, nullptr);
     }
+
+    void HelloTriangleApplication::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandPool = commandPools[VK_QUEUE_TRANSFER_BIT];
+        allocInfo.commandBufferCount = 1;
+
+        VkCommandBuffer commandBuffer;
+        vkAllocateCommandBuffers(m_Device, &allocInfo, &commandBuffer);
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+        vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+        VkBufferCopy copyRegion{};
+        copyRegion.srcOffset = 0; // Optional
+        copyRegion.dstOffset = 0; // Optional
+        copyRegion.size = size;
+        vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+        vkEndCommandBuffer(commandBuffer);
+
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+
+        vkQueueSubmit(m_TransferQueue, 1, &submitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(m_TransferQueue);
+        vkFreeCommandBuffers(m_Device, commandPools[VK_QUEUE_TRANSFER_BIT], 1, &commandBuffer);
+    }
+
+    void HelloTriangleApplication::createVertexBuffer() {
+        
+        VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+        void* data;
+        vkMapMemory(m_Device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        memcpy(data, vertices.data(), (size_t)bufferSize);
+        vkUnmapMemory(m_Device, stagingBufferMemory);
+
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory);
+        copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+        vkDestroyBuffer(m_Device, stagingBuffer, nullptr);
+        vkFreeMemory(m_Device, stagingBufferMemory, nullptr);
+    }
+
+    void HelloTriangleApplication::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = size;
+        bufferInfo.usage = usage;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        if (vkCreateBuffer(m_Device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create buffer!");
+        }
+
+        VkMemoryRequirements memRequirements;
+        vkGetBufferMemoryRequirements(m_Device, buffer, &memRequirements);
+
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memRequirements.size;
+        allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
+
+        if (vkAllocateMemory(m_Device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate buffer memory!");
+        }
+
+        vkBindBufferMemory(m_Device, buffer, bufferMemory, 0);
+    }
+
+    uint32_t HelloTriangleApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+        VkPhysicalDeviceMemoryProperties memProperties;
+        vkGetPhysicalDeviceMemoryProperties(m_PhysicalDevice, &memProperties);
+        for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+            if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+                return i;
+            }
+        }
+
+        throw std::runtime_error("failed to find suitable memory type!");
+    }
+
 
     void HelloTriangleApplication::recreateSwapChain() {
         int width = 0, height = 0;
@@ -227,7 +321,7 @@ namespace VulkanGraphics {
         commandBuffers.resize(swapChainFramebuffers.size());
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocInfo.commandPool = commandPool;
+        allocInfo.commandPool = commandPools[VK_QUEUE_GRAPHICS_BIT];
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         allocInfo.commandBufferCount = (uint32_t)commandBuffers.size();
 
@@ -236,7 +330,6 @@ namespace VulkanGraphics {
         }
 
         for (size_t i = 0; i < commandBuffers.size(); i++) {
-            std::cout << i << " command buffer\n";
             VkCommandBufferBeginInfo beginInfo{};
             beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
             beginInfo.flags = 0; // Optional
@@ -257,6 +350,10 @@ namespace VulkanGraphics {
             renderPassInfo.pClearValues = &clearColor;
             vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
             vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+            VkBuffer vertexBuffers[] = { vertexBuffer };
+            VkDeviceSize offsets[] = { 0 };
+            vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
+
             vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
             vkCmdEndRenderPass(commandBuffers[i]);
             if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
@@ -267,17 +364,28 @@ namespace VulkanGraphics {
         
     }
 
-    void HelloTriangleApplication::createCommandPool() {
+    void HelloTriangleApplication::createCommandPools() {
         QueueFamilyIndices queueFamilyIndices = findQueueFamilies(m_PhysicalDevice);
-
-        VkCommandPoolCreateInfo poolInfo{};
-        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
-        poolInfo.flags = 0; // Optional
-        if (vkCreateCommandPool(m_Device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create command pool!");
+        VkCommandPool graghicsCP;
+        VkCommandPoolCreateInfo graphicsPoolInfo{};
+        graphicsPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        graphicsPoolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+        graphicsPoolInfo.flags = 0; // Optional
+        if (vkCreateCommandPool(m_Device, &graphicsPoolInfo, nullptr, &graghicsCP) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create graphics command pool!");
         }
+        ;
+        commandPools.emplace(std::pair<uint32_t, VkCommandPool>(VK_QUEUE_GRAPHICS_BIT, graghicsCP));
 
+        VkCommandPool transferCP;
+        VkCommandPoolCreateInfo transferPoolInfo{};
+        transferPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        transferPoolInfo.queueFamilyIndex = queueFamilyIndices.transferFamily.value();
+        transferPoolInfo.flags = 0; // Optional
+        if (vkCreateCommandPool(m_Device, &transferPoolInfo, nullptr, &transferCP) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create transfer command pool!");
+        }
+        commandPools.emplace(std::pair<uint32_t, VkCommandPool>(VK_QUEUE_TRANSFER_BIT, transferCP));
     }
 
     void HelloTriangleApplication::createFramebuffers() {
@@ -350,8 +458,8 @@ namespace VulkanGraphics {
     void HelloTriangleApplication::createGraphicsPipeline() {
         auto vertShaderCode = readFile("Shaders/vert.spv");
         auto fragShaderCode = readFile("Shaders/frag.spv");
-        std::cout << "Vertex shader size: " << vertShaderCode.size() << std::endl;
-        std::cout << "Fragment shader size: " << fragShaderCode.size() << std::endl;
+        //std::cout << "Vertex shader size: " << vertShaderCode.size() << std::endl;
+        //std::cout << "Fragment shader size: " << fragShaderCode.size() << std::endl;
         VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
         VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
 
@@ -369,12 +477,15 @@ namespace VulkanGraphics {
 
         VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
 
+        auto bindingDescription = Vertex::getBindingDescription();
+        auto attributeDescriptions = Vertex::getAttributeDescriptions();
+
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInputInfo.vertexBindingDescriptionCount = 0;
-        vertexInputInfo.pVertexBindingDescriptions = nullptr; // Optional
-        vertexInputInfo.vertexAttributeDescriptionCount = 0;
-        vertexInputInfo.pVertexAttributeDescriptions = nullptr; // Optional
+        vertexInputInfo.vertexBindingDescriptionCount = 1;
+        vertexInputInfo.pVertexBindingDescriptions = &bindingDescription; // Optional
+        vertexInputInfo.vertexAttributeDescriptionCount = attributeDescriptions.size();
+        vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data(); // Optional
 
         VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
         inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -579,12 +690,13 @@ namespace VulkanGraphics {
         createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
         QueueFamilyIndices indices = findQueueFamilies(m_PhysicalDevice);
-        uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+        uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.transferFamily.value() };
 
-        if (indices.graphicsFamily != indices.presentFamily) {
+        if (indices.graphicsFamily != indices.presentFamily || indices.graphicsFamily != indices.transferFamily) {
             createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
             createInfo.queueFamilyIndexCount = 2;
             createInfo.pQueueFamilyIndices = queueFamilyIndices;
+            
         }
         else {
             createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -680,7 +792,7 @@ namespace VulkanGraphics {
         QueueFamilyIndices indices = findQueueFamilies(m_PhysicalDevice);
 
         std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-        std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+        std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value(), indices.transferFamily.value() };
 
         float queuePriority = 1.0f;
         for (uint32_t queueFamily : uniqueQueueFamilies) {
@@ -715,8 +827,10 @@ namespace VulkanGraphics {
         if (vkCreateDevice(m_PhysicalDevice, &createInfo, nullptr, &m_Device) != VK_SUCCESS) {
             throw std::runtime_error("failed to create logical device!");
         }
+
         vkGetDeviceQueue(m_Device, indices.graphicsFamily.value(), 0, &m_GraphicsQueue);
         vkGetDeviceQueue(m_Device, indices.presentFamily.value(), 0, &m_PresentQueue);
+        vkGetDeviceQueue(m_Device, indices.transferFamily.value(), 0, &m_TransferQueue);
     }
 
     bool HelloTriangleApplication::isDeviceSuitable(VkPhysicalDevice device) {
@@ -757,18 +871,25 @@ namespace VulkanGraphics {
 
         std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
-
+        //std::cout << "pfamily count: " << queueFamilyCount << std::endl;
         int i = 0;
         for (const auto& queueFamily : queueFamilies) {
             if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
                 indices.graphicsFamily = i;
                 
             }
+            else if (queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT) {
+                indices.transferFamily = i;
+            }
+
             VkBool32 presentSupport = false;
             vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_Surface, &presentSupport);
             if (presentSupport) {
                 indices.presentFamily = i;
             }
+
+            
+
 
             if (indices.isComplete()) {
                 break;

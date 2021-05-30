@@ -1,11 +1,38 @@
 #pragma once
 
 namespace VulkanGraphics {
+    struct Vertex {
+        glm::vec2 position;
+        glm::vec3 color;
+        static VkVertexInputBindingDescription getBindingDescription() {
+            VkVertexInputBindingDescription bindingDescription{};
+            bindingDescription.binding = 0;
+            bindingDescription.stride = sizeof(Vertex);
+            bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+            return bindingDescription;
+        }
+        static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions() {
+            std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+            attributeDescriptions[0].binding = 0;
+            attributeDescriptions[0].location = 0;
+            attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+            attributeDescriptions[0].offset = offsetof(Vertex, position);
+
+            attributeDescriptions[1].binding = 0;
+            attributeDescriptions[1].location = 1;
+            attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+            attributeDescriptions[1].offset = offsetof(Vertex, color);
+            return attributeDescriptions;
+        }
+        
+    };
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;
         std::optional<uint32_t> presentFamily;
+        std::optional<uint32_t> transferFamily;
         bool isComplete() {
-            return graphicsFamily.has_value() && presentFamily.has_value();
+            return graphicsFamily.has_value() && presentFamily.has_value() && transferFamily.has_value();
         }
     };
 
@@ -63,11 +90,14 @@ namespace VulkanGraphics {
         void createGraphicsPipeline();
         VkShaderModule createShaderModule(const std::vector<char>& code);
         void createFramebuffers();
-        void createCommandPool();
+        void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+        void createCommandPools();
         void createCommandBuffers();
+        void createVertexBuffer();
         void drawFrame();
         void createSemaphores();
-        
+        uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+        void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
         
         
     private:
@@ -83,13 +113,14 @@ namespace VulkanGraphics {
         VkQueue m_GraphicsQueue;
         VkSurfaceKHR m_Surface;
         VkQueue m_PresentQueue;
+        VkQueue m_TransferQueue;
         VkSwapchainKHR m_SwapChain;
         std::vector<VkImage> swapChainImages;
         VkRenderPass renderPass;
         VkPipelineLayout pipelineLayout;
         VkPipeline graphicsPipeline;
         std::vector<VkFramebuffer> swapChainFramebuffers;
-        VkCommandPool commandPool;
+        std::unordered_map<uint32_t, VkCommandPool> commandPools;
         std::vector<VkCommandBuffer> commandBuffers;
         const int MAX_FRAMES_IN_FLIGHT = 2;
         size_t currentFrame = 0;
@@ -97,7 +128,13 @@ namespace VulkanGraphics {
         std::vector<VkSemaphore> renderFinishedSemaphores;
         std::vector<VkFence> inFlightFences;
         std::vector<VkFence> imagesInFlight;
-
+        std::vector<Vertex> vertices = {
+                {{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
+                {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+                {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+        };
+        VkBuffer vertexBuffer;
+        VkDeviceMemory vertexBufferMemory;
         
         //
         
