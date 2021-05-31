@@ -1,6 +1,11 @@
 #pragma once
 
 namespace VulkanGraphics {
+    struct UniformBufferObject {
+        glm::mat4 model;
+        glm::mat4 view;
+        glm::mat4 proj;
+    };
     struct Vertex {
         glm::vec2 position;
         glm::vec3 color;
@@ -87,6 +92,7 @@ namespace VulkanGraphics {
         void cleanupSwapChain();
         void createImageViews();
         void createRenderPass();
+        void createDescriptorSetLayout();
         void createGraphicsPipeline();
         VkShaderModule createShaderModule(const std::vector<char>& code);
         void createFramebuffers();
@@ -94,6 +100,11 @@ namespace VulkanGraphics {
         void createCommandPools();
         void createCommandBuffers();
         void createVertexBuffer();
+        void createIndexBuffer();
+        void createUniformBuffers();
+        void updateUniformBuffer(uint32_t currentImage);
+        void createDescriptorPool();
+        void createDescriptorSets();
         void drawFrame();
         void createSemaphores();
         uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
@@ -117,10 +128,13 @@ namespace VulkanGraphics {
         VkSwapchainKHR m_SwapChain;
         std::vector<VkImage> swapChainImages;
         VkRenderPass renderPass;
+        VkDescriptorSetLayout descriptorSetLayout;
         VkPipelineLayout pipelineLayout;
         VkPipeline graphicsPipeline;
         std::vector<VkFramebuffer> swapChainFramebuffers;
         std::unordered_map<uint32_t, VkCommandPool> commandPools;
+        VkDescriptorPool descriptorPool;
+        std::vector<VkDescriptorSet> descriptorSets;
         std::vector<VkCommandBuffer> commandBuffers;
         const int MAX_FRAMES_IN_FLIGHT = 2;
         size_t currentFrame = 0;
@@ -128,13 +142,22 @@ namespace VulkanGraphics {
         std::vector<VkSemaphore> renderFinishedSemaphores;
         std::vector<VkFence> inFlightFences;
         std::vector<VkFence> imagesInFlight;
-        std::vector<Vertex> vertices = {
-                {{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
-                {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-                {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+        const std::vector<Vertex> vertices = {
+                {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+                {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+                {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+                {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+        };
+
+        const std::vector<uint16_t> indices = {
+                0, 1, 2, 2, 3, 0
         };
         VkBuffer vertexBuffer;
         VkDeviceMemory vertexBufferMemory;
+        VkBuffer indexBuffer;
+        VkDeviceMemory indexBufferMemory;
+        std::vector<VkBuffer> uniformBuffers;
+        std::vector<VkDeviceMemory> uniformBuffersMemory;
         
         //
         
